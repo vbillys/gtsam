@@ -105,6 +105,9 @@
  *          virtual class MyFactor : gtsam::NoiseModelFactor {...};
  *    - *DO NOT* re-define overriden function already declared in the external (forward-declared) base class
  *        - This will cause an ambiguity problem in Pybind header file
+ *   Pickle support in Python:
+ *    - Add "void pickle()" to a class to enable pickling via gtwrap. In the current implementation, "void serialize()"
+ *      and a public constructor with no-arguments in needed for successful build.
  */
 
 /**
@@ -144,6 +147,9 @@ class KeyList {
   void remove(size_t key);
 
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 // Actually a FastSet<Key>
@@ -169,6 +175,9 @@ class KeySet {
   bool count(size_t key) const; // returns true if value exists
 
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 // Actually a vector<Key>
@@ -190,6 +199,9 @@ class KeyVector {
   void push_back(size_t key) const;
 
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 // Actually a FastMap<Key,int>
@@ -361,6 +373,9 @@ class Point2 {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 // std::vector<gtsam::Point2>
@@ -422,6 +437,9 @@ class StereoPoint2 {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/Point3.h>
@@ -446,6 +464,18 @@ class Point3 {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
+};
+
+#include <gtsam/geometry/Point3.h>
+class Point3Pairs {
+  Point3Pairs();
+  size_t size() const;
+  bool empty() const;
+  gtsam::Point3Pair at(size_t n) const;
+  void push_back(const gtsam::Point3Pair& point_pair);
 };
 
 #include <gtsam/geometry/Rot2.h>
@@ -491,6 +521,9 @@ class Rot2 {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/SO3.h>
@@ -653,6 +686,9 @@ class Rot3 {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/Pose2.h>
@@ -708,6 +744,9 @@ class Pose2 {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/Pose3.h>
@@ -764,6 +803,18 @@ class Pose3 {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
+};
+
+#include <gtsam/geometry/Pose3.h>
+class Pose3Pairs {
+  Pose3Pairs();
+  size_t size() const;
+  bool empty() const;
+  gtsam::Pose3Pair at(size_t n) const;
+  void push_back(const gtsam::Pose3Pair& pose_pair);
 };
 
 // std::vector<gtsam::Pose3>
@@ -797,6 +848,15 @@ class Unit3 {
   size_t dim() const;
   gtsam::Unit3 retract(Vector v) const;
   Vector localCoordinates(const gtsam::Unit3& s) const;
+
+  // enabling serialization functionality
+  void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
+
+  // enabling function to compare objects
+  bool equals(const gtsam::Unit3& expected, double tol) const;
 };
 
 #include <gtsam/geometry/EssentialMatrix.h>
@@ -856,6 +916,9 @@ class Cal3_S2 {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/Cal3DS2_Base.h>
@@ -884,6 +947,9 @@ virtual class Cal3DS2_Base {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/Cal3DS2.h>
@@ -905,6 +971,9 @@ virtual class Cal3DS2 : gtsam::Cal3DS2_Base {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/Cal3Unified.h>
@@ -931,6 +1000,9 @@ virtual class Cal3Unified : gtsam::Cal3DS2_Base {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/Cal3_S2Stereo.h>
@@ -988,6 +1060,9 @@ class Cal3Bundler {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/CalibratedCamera.h>
@@ -1018,6 +1093,9 @@ class CalibratedCamera {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/PinholeCamera.h>
@@ -1056,7 +1134,33 @@ class PinholeCamera {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
+
+
+#include <gtsam/geometry/Similarity3.h>
+class Similarity3 {
+  // Standard Constructors
+  Similarity3();
+  Similarity3(double s);
+  Similarity3(const gtsam::Rot3& R, const gtsam::Point3& t, double s);
+  Similarity3(const Matrix& R, const Vector& t, double s);
+  Similarity3(const Matrix& T);
+
+  gtsam::Pose3 transformFrom(const gtsam::Pose3& T);
+  static Similarity3 Align(const gtsam::Point3Pairs & abPointPairs);
+  static Similarity3 Align(const gtsam::Pose3Pairs & abPosePairs);
+
+  // Standard Interface
+  const Matrix matrix() const;
+  const gtsam::Rot3& rotation();
+  const gtsam::Point3& translation();
+  double scale() const;
+};
+
+
 
 // Forward declaration of PinholeCameraCalX is defined here.
 #include <gtsam/geometry/SimpleCamera.h>
@@ -1103,6 +1207,9 @@ class StereoCamera {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/geometry/triangulation.h>
@@ -1557,6 +1664,9 @@ class VectorValues {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/linear/GaussianFactor.h>
@@ -1618,6 +1728,9 @@ virtual class JacobianFactor : gtsam::GaussianFactor {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/linear/HessianFactor.h>
@@ -1649,6 +1762,9 @@ virtual class HessianFactor : gtsam::GaussianFactor {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/linear/GaussianFactorGraph.h>
@@ -1728,6 +1844,9 @@ class GaussianFactorGraph {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/linear/GaussianConditional.h>
@@ -2033,6 +2152,9 @@ class Ordering {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
@@ -2071,6 +2193,10 @@ class NonlinearFactorGraph {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
+
   void saveGraph(const string& s) const;
 };
 
@@ -2127,6 +2253,9 @@ class Values {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 
   // New in 4.0, we have to specialize every insert/update/at to generate wrappers
   // Instead of the old:
@@ -2527,6 +2656,9 @@ virtual class PriorFactor : gtsam::NoiseModelFactor {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 
@@ -2538,6 +2670,9 @@ virtual class BetweenFactor : gtsam::NoiseModelFactor {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 };
 
 #include <gtsam/nonlinear/NonlinearEquality.h>
@@ -2622,6 +2757,8 @@ virtual class BearingRangeFactor : gtsam::NoiseModelFactor {
   BearingRangeFactor(size_t poseKey, size_t pointKey,
       const BEARING& measuredBearing, const RANGE& measuredRange,
       const gtsam::noiseModel::Base* noiseModel);
+
+  BearingRange<POSE, POINT, BEARING, RANGE> measured() const;
 
   // enabling serialization functionality
   void serialize() const;
@@ -2772,6 +2909,9 @@ class SfmTrack {
   // enabling serialization functionality
   void serialize() const;
 
+  // enable pickling in python
+  void pickle() const;
+
   // enabling function to compare objects
   bool equals(const gtsam::SfmTrack& expected, double tol) const;
 };
@@ -2787,6 +2927,9 @@ class SfmData {
 
   // enabling serialization functionality
   void serialize() const;
+
+  // enable pickling in python
+  void pickle() const;
 
   // enabling function to compare objects
   bool equals(const gtsam::SfmData& expected, double tol) const;

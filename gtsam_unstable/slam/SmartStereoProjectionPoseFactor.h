@@ -71,7 +71,7 @@ class SmartStereoProjectionPoseFactor : public SmartStereoProjectionFactor {
       const boost::optional<Pose3>& body_P_sensor = boost::none);
 
   /** Virtual destructor */
-  virtual ~SmartStereoProjectionPoseFactor() = default;
+  ~SmartStereoProjectionPoseFactor() override = default;
 
   /**
    * add a new measurement and pose key
@@ -113,12 +113,12 @@ class SmartStereoProjectionPoseFactor : public SmartStereoProjectionFactor {
    * print
    * @param s optional string naming the factor
    * @param keyFormatter optional formatter useful for printing Symbols
-   */ void print(
-      const std::string& s = "",
-      const KeyFormatter& keyFormatter = DefaultKeyFormatter) const override;
+   */
+  void print(const std::string& s = "", const KeyFormatter& keyFormatter =
+                                            DefaultKeyFormatter) const override;
 
   /// equals
-  virtual bool equals(const NonlinearFactor& p, double tol = 1e-9) const;
+  bool equals(const NonlinearFactor& p, double tol = 1e-9) const override;
 
   /**
    * error calculates the error of the factor.
@@ -155,4 +155,4 @@ template <>
 struct traits<SmartStereoProjectionPoseFactor>
     : public Testable<SmartStereoProjectionPoseFactor> {};
 
-}  // \ namespace gtsam
+}  // namespace gtsam
