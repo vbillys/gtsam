@@ -1,11 +1,17 @@
-set(PYBIND11_PYTHON_VERSION ${WRAP_PYTHON_VERSION})
-
 if(GTWRAP_PYTHON_PACKAGE_DIR)
   # packaged
   set(GTWRAP_PACKAGE_DIR "${GTWRAP_PYTHON_PACKAGE_DIR}")
 else()
   set(GTWRAP_PACKAGE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 endif()
+
+# Get the Python version
+include(GtwrapUtils)
+message(STATUS "Checking Python Version")
+gtwrap_get_python_version(${WRAP_PYTHON_VERSION})
+
+message(STATUS "Setting Python version for wrapper")
+set(PYBIND11_PYTHON_VERSION ${WRAP_PYTHON_VERSION})
 
 # User-friendly Pybind11 wrapping and installing function.
 # Builds a Pybind11 module from the provided interface_header.
@@ -66,6 +72,7 @@ function(pybind_wrap
                              --template
                              ${module_template}
                              ${_WRAP_BOOST_ARG}
+                     DEPENDS ${interface_header} ${module_template}
                      VERBATIM)
   add_custom_target(pybind_wrap_${module_name} ALL DEPENDS ${generated_cpp})
 

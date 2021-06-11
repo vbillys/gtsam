@@ -13,6 +13,9 @@
 #include <pybind11/eigen.h>
 #include <pybind11/stl_bind.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/operators.h>
+#include <pybind11/functional.h>
+#include <pybind11/iostream.h>
 #include "gtsam/config.h"
 #include "gtsam/base/serialization.h"
 #include "gtsam/nonlinear/utilities.h"  // for RedirectCout.
@@ -25,7 +28,7 @@
 {boost_class_export}
 
 // Holder type for pybind11
-{hoder_type}
+{holder_type}
 
 // Preamble for STL classes
 // TODO(fan): make this automatic

@@ -1,26 +1,56 @@
+"""Code to help instantiate templated classes, methods and functions."""
+
+# pylint: disable=too-many-arguments, too-many-instance-attributes, no-self-use, no-else-return, too-many-arguments, unused-format-string-argument, unused-variable
+
+import itertools
+from copy import deepcopy
+from typing import List
+
 import gtwrap.interface_parser as parser
 
 
-def instantiate_type(ctype, template_typenames, instantiations, cpp_typename, instantiated_class=None):
+def instantiate_type(ctype: parser.Type,
+                     template_typenames: List[str],
+                     instantiations: List[parser.Typename],
+                     cpp_typename: parser.Typename,
+                     instantiated_class=None):
     """
     Instantiate template typename for @p ctype.
+
+    Args:
+        instiated_class (InstantiatedClass):
+
     @return If ctype's name is in the @p template_typenames, return the
         corresponding type to replace in @p instantiations.
         If ctype name is `This`, return the new typename @p `cpp_typename`.
         Otherwise, return the original ctype.
     """
+    # make a deep copy so that there is no overwriting of original template params
+    ctype = deepcopy(ctype)
+
+    # Check if the return type has template parameters
+    if len(ctype.typename.instantiations) > 0:
+        for idx, instantiation in enumerate(ctype.typename.instantiations):
+            if instantiation.name in template_typenames:
+                template_idx = template_typenames.index(instantiation.name)
+                ctype.typename.instantiations[idx] = instantiations[
+                    template_idx]
+
+        return ctype
+
     str_arg_typename = str(ctype.typename)
+
     if str_arg_typename in template_typenames:
         idx = template_typenames.index(str_arg_typename)
         return parser.Type(
             typename=instantiations[idx],
             is_const=ctype.is_const,
+            is_shared_ptr=ctype.is_shared_ptr,
             is_ptr=ctype.is_ptr,
             is_ref=ctype.is_ref,
-            is_basis=ctype.is_basis,
+            is_basic=ctype.is_basic,
         )
     elif str_arg_typename == 'This':
-        # import sys
         if instantiated_class:
             name = instantiated_class.original.name
             namespaces_name = instantiated_class.namespaces()
@@ -29,14 +59,16 @@ def instantiate_type(ctype, template_typenames, instantiations, cpp_typename, in
             #     ctype, instantiations, cpp_typename, instantiated_class.instantiations
             # ), file=sys.stderr)
             cpp_typename = parser.Typename(
-                namespaces_name, instantiations=[inst for inst in instantiated_class.instantiations]
-            )
+                namespaces_name,
+                instantiations=instantiated_class.instantiations)
+
         return parser.Type(
             typename=cpp_typename,
             is_const=ctype.is_const,
+            is_shared_ptr=ctype.is_shared_ptr,
             is_ptr=ctype.is_ptr,
             is_ref=ctype.is_ref,
-            is_basis=ctype.is_basis,
+            is_basic=ctype.is_basic,
         )
     else:
         return ctype
@@ -61,21 +93,32 @@ def instantiate_args_list(args_list, template_typenames, instantiations,
     """
     instantiated_args = []
     for arg in args_list:
-        new_type = instantiate_type(
-            arg.ctype, template_typenames, instantiations, cpp_typename)
-        instantiated_args.append(
-            parser.Argument(name=arg.name, ctype=new_type))
+        new_type = instantiate_type(arg.ctype, template_typenames,
+                                    instantiations, cpp_typename)
+        default = [arg.default] if isinstance(arg, parser.Argument) else ''
+        instantiated_args.append(parser.Argument(name=arg.name,
+                                                 ctype=new_type,
+                                                 default=default))
     return instantiated_args
 
 
-def instantiate_return_type(return_type, template_typenames, instantiations,
-                            cpp_typename, instantiated_class=None):
-    new_type1 = instantiate_type(
-        return_type.type1, template_typenames, instantiations, cpp_typename, instantiated_class=instantiated_class)
+def instantiate_return_type(return_type,
+                            template_typenames,
+                            instantiations,
+                            cpp_typename,
+                            instantiated_class=None):
+    """Instantiate the return type."""
+    new_type1 = instantiate_type(return_type.type1,
+                                 template_typenames,
+                                 instantiations,
+                                 cpp_typename,
+                                 instantiated_class=instantiated_class)
     if return_type.type2:
-        new_type2 = instantiate_type(
-            return_type.type2, template_typenames, instantiations,
-            cpp_typename, instantiated_class=instantiated_class)
+        new_type2 = instantiate_type(return_type.type2,
+                                     template_typenames,
+                                     instantiations,
+                                     cpp_typename,
+                                     instantiated_class=instantiated_class)
     else:
         new_type2 = ''
     return parser.ReturnType(new_type1, new_type2)
@@ -89,21 +132,28 @@ def instantiate_name(original_name, instantiations):
     namespaces, but I find that too verbose.
     """
     inst_name = ''
+    instantiated_names = []
+    for inst in instantiations:
+        # Ensure the first character of the type is capitalized
+        name = inst.instantiated_name()
+        # Using `capitalize` on the complete name causes other caps to be lower case
+        instantiated_names.append(name.replace(name[0], name[0].capitalize()))
 
-    return "{}{}".format(original_name, "".join(
-        [inst.instantiated_name() for inst in instantiations]))
+    return "{}{}".format(original_name, "".join(instantiated_names))
 
 
-class InstantiatedMethod(parser.Method):
+class InstantiatedGlobalFunction(parser.GlobalFunction):
     """
-    We can only instantiate template methods with a single template parameter.
-    """
+    Instantiate global functions.
 
-    def __init__(self, original, instantiation=''):
+    E.g.
+        template<T = {double}>
+        T add(const T& x, const T& y);
+    """
+    def __init__(self, original, instantiations=(), new_name=''):
         self.original = original
-        self.instantiation = instantiation
+        self.instantiations = instantiations
         self.template = ''
-        self.is_const = original.is_const
         self.parent = original.parent
 
         if not original.template:
@@ -111,42 +161,112 @@ class InstantiatedMethod(parser.Method):
             self.return_type = original.return_type
             self.args = original.args
         else:
-            if len(self.original.template.typenames) > 1:
-                raise ValueError("Can only instantiate template method with "
-                                 "single template parameter.")
-            self.name = instantiate_name(original.name, [self.instantiation])
+            self.name = instantiate_name(
+                original.name, instantiations) if not new_name else new_name
             self.return_type = instantiate_return_type(
                 original.return_type,
-                [self.original.template.typenames[0]],
-                [self.instantiation],
+                self.original.template.typenames,
+                self.instantiations,
                 # Keyword type name `This` should already be replaced in the
                 # previous class template instantiation round.
                 cpp_typename='',
             )
             instantiated_args = instantiate_args_list(
                 original.args.args_list,
-                [self.original.template.typenames[0]],
-                [self.instantiation],
+                self.original.template.typenames,
+                self.instantiations,
                 # Keyword type name `This` should already be replaced in the
                 # previous class template instantiation round.
                 cpp_typename='',
             )
             self.args = parser.ArgumentList(instantiated_args)
 
+        super().__init__(self.name,
+                         self.return_type,
+                         self.args,
+                         self.template,
+                         parent=self.parent)
+
     def to_cpp(self):
+        """Generate the C++ code for wrapping."""
         if self.original.template:
-            return "{}<{}>".format(self.original.name, self.instantiation)
+            instantiated_names = [
+                inst.instantiated_name() for inst in self.instantiations
+            ]
+            ret = "{}<{}>".format(self.original.name,
+                                  ",".join(instantiated_names))
         else:
-            return self.original.name
+            ret = self.original.name
+        return ret
 
     def __repr__(self):
         return "Instantiated {}".format(
-            super(InstantiatedMethod, self).__repr__()
+            super(InstantiatedGlobalFunction, self).__repr__())
+
+
+class InstantiatedMethod(parser.Method):
+    """
+    We can only instantiate template methods with a single template parameter.
+    """
+    def __init__(self, original, instantiations: List[parser.Typename] = ''):
+        self.original = original
+        self.instantiations = instantiations
+        self.template = ''
+        self.is_const = original.is_const
+        self.parent = original.parent
+
+        # Check for typenames if templated.
+        # This way, we can gracefully handle bot templated and non-templated methois.
+        typenames = self.original.template.typenames if self.original.template else []
+        self.name = instantiate_name(original.name, self.instantiations)
+        self.return_type = instantiate_return_type(
+            original.return_type,
+            typenames,
+            self.instantiations,
+            # Keyword type name `This` should already be replaced in the
+            # previous class template instantiation round.
+            cpp_typename='',
         )
+
+        instantiated_args = instantiate_args_list(
+            original.args.args_list,
+            typenames,
+            self.instantiations,
+            # Keyword type name `This` should already be replaced in the
+            # previous class template instantiation round.
+            cpp_typename='',
+        )
+        self.args = parser.ArgumentList(instantiated_args)
+
+        super().__init__(self.template,
+                         self.name,
+                         self.return_type,
+                         self.args,
+                         self.is_const,
+                         parent=self.parent)
+
+    def to_cpp(self):
+        """Generate the C++ code for wrapping."""
+        if self.original.template:
+            # to_cpp will handle all the namespacing and templating
+            instantiation_list = [x.to_cpp() for x in self.instantiations]
+            # now can simply combine the instantiations, separated by commas
+            ret = "{}<{}>".format(self.original.name,
+                                  ",".join(instantiation_list))
+        else:
+            ret = self.original.name
+        return ret
+
+    def __repr__(self):
+        return "Instantiated {}".format(
+            super(InstantiatedMethod, self).__repr__())
 
 
 class InstantiatedClass(parser.Class):
-    def __init__(self, original, instantiations=[], new_name=''):
+    """
+    Instantiate the class defined in the interface file.
+    """
+    def __init__(self, original: parser.Class, instantiations=(), new_name=''):
         """
         Template <T, U>
         Instantiations: [T1, U1]
@@ -159,36 +279,63 @@ class InstantiatedClass(parser.Class):
         self.parent_class = original.parent_class
         self.parent = original.parent
 
-        if not original.template:
-            self.name = original.name
-            self.ctors = list(original.ctors)
-            self.static_methods = list(original.static_methods)
-            class_instantiated_methods = list(original.methods)
-            self.properties = list(original.properties)
-        else:
-            # Check conditions.
+        # If the class is templated, check if the number of provided instantiations
+        # match the number of templates, else it's only a partial instantiation which is bad.
+        if original.template:
             assert len(original.template.typenames) == len(
                 instantiations), "Typenames and instantiations mismatch!"
 
-            self.name = instantiate_name(
-                original.name, instantiations) if not new_name else new_name
-            self.ctors = self.instantiate_ctors()
-            self.static_methods = self.instantiate_static_methods()
-            class_instantiated_methods = \
-                self.instantiate_class_templates_in_methods()
-            self.properties = self.instantiate_properties()
+        # Get the instantiated name of the class. E.g. FuncDouble
+        self.name = instantiate_name(
+            original.name, instantiations) if not new_name else new_name
 
-        # Second instantiation round to instantiate template methods.
+        # Check for typenames if templated.
+        # By passing in typenames, we can gracefully handle both templated and non-templated classes
+        # This will allow the `This` keyword to be used in both templated and non-templated classes.
+        typenames = self.original.template.typenames if self.original.template else []
+
+        # Instantiate the constructors, static methods, properties, respectively.
+        self.ctors = self.instantiate_ctors(typenames)
+        self.static_methods = self.instantiate_static_methods(typenames)
+        self.properties = self.instantiate_properties(typenames)
+
+        # Instantiate all operator overloads
+        self.operators = self.instantiate_operators(typenames)
+
+        # Set enums
+        self.enums = original.enums
+
+        # Instantiate all instance methods
+        instantiated_methods = \
+            self.instantiate_class_templates_in_methods(typenames)
+
+        # Second instantiation round to instantiate templated methods.
+        # This is done in case both the class and the method are templated.
         self.methods = []
-        for method in class_instantiated_methods:
+        for method in instantiated_methods:
             if not method.template:
                 self.methods.append(InstantiatedMethod(method, ''))
             else:
-                assert len(
-                    method.template.typenames) == 1, ""\
-                    "Can only instantiate single template methods"
-                for inst in method.template.instantiations[0]:
-                    self.methods.append(InstantiatedMethod(method, inst))
+                instantiations = []
+                # Get all combinations of template parameters
+                for instantiations in itertools.product(
+                        *method.template.instantiations):
+                    self.methods.append(
+                        InstantiatedMethod(method, instantiations))
+
+        super().__init__(
+            self.template,
+            self.is_virtual,
+            self.name,
+            [self.parent_class],
+            self.ctors,
+            self.methods,
+            self.static_methods,
+            self.properties,
+            self.operators,
+            self.enums,
+            parent=self.parent,
+        )
 
     def __repr__(self):
         return "{virtual} class {name} [{cpp_class}]: {parent_class}\n"\
@@ -197,92 +344,161 @@ class InstantiatedClass(parser.Class):
                name=self.name,
                cpp_class=self.cpp_class(),
                parent_class=self.parent,
-               ctors="\n".join([ctor.__repr__() for ctor in self.ctors]),
-               methods="\n".join([m.__repr__() for m in self.methods]),
-               static_methods="\n".join([m.__repr__()
+               ctors="\n".join([repr(ctor) for ctor in self.ctors]),
+               methods="\n".join([repr(m) for m in self.methods]),
+               static_methods="\n".join([repr(m)
                                          for m in self.static_methods]),
+               operators="\n".join([repr(op) for op in self.operators])
             )
 
-    def instantiate_ctors(self):
+    def instantiate_ctors(self, typenames):
+        """
+        Instantiate the class constructors.
+
+        Args:
+            typenames: List of template types to instantiate.
+
+        Return: List of constructors instantiated with provided template args.
+        """
         instantiated_ctors = []
+
         for ctor in self.original.ctors:
             instantiated_args = instantiate_args_list(
                 ctor.args.args_list,
-                self.original.template.typenames,
+                typenames,
                 self.instantiations,
                 self.cpp_typename(),
             )
-            instantiated_ctors.append(parser.Constructor(
-                name=self.name,
-                args=parser.ArgumentList(instantiated_args),
-                parent=self,
-            ))
+            instantiated_ctors.append(
+                parser.Constructor(
+                    name=self.name,
+                    args=parser.ArgumentList(instantiated_args),
+                    parent=self,
+                ))
         return instantiated_ctors
 
-    def instantiate_static_methods(self):
+    def instantiate_static_methods(self, typenames):
+        """
+        Instantiate static methods in the class.
+
+        Args:
+            typenames: List of template types to instantiate.
+
+        Return: List of static methods instantiated with provided template args.
+        """
         instantiated_static_methods = []
         for static_method in self.original.static_methods:
             instantiated_args = instantiate_args_list(
-                static_method.args.args_list,
-                self.original.template.typenames,
-                self.instantiations,
-                self.cpp_typename()
-            )
+                static_method.args.args_list, typenames, self.instantiations,
+                self.cpp_typename())
             instantiated_static_methods.append(
                 parser.StaticMethod(
                     name=static_method.name,
                     return_type=instantiate_return_type(
                         static_method.return_type,
-                        self.original.template.typenames,
+                        typenames,
                         self.instantiations,
                         self.cpp_typename(),
-                        instantiated_class=self
-                    ),
+                        instantiated_class=self),
                     args=parser.ArgumentList(instantiated_args),
                     parent=self,
-                )
-            )
+                ))
         return instantiated_static_methods
 
-    def instantiate_class_templates_in_methods(self):
+    def instantiate_class_templates_in_methods(self, typenames):
         """
-        This function only instantiates class templates in the methods.
+        This function only instantiates the class-level templates in the methods.
         Template methods are instantiated in InstantiatedMethod in the second
         round.
+
+        E.g.
+        ```
+        template<T={string}>
+        class Greeter{
+            void sayHello(T& name);
+        };
+
+        Args:
+            typenames: List of template types to instantiate.
+
+        Return: List of methods instantiated with provided template args on the class.
         """
         class_instantiated_methods = []
         for method in self.original.methods:
             instantiated_args = instantiate_args_list(
                 method.args.args_list,
-                self.original.template.typenames,
+                typenames,
                 self.instantiations,
                 self.cpp_typename(),
             )
-            class_instantiated_methods.append(parser.Method(
-                template=method.template,
-                name=method.name,
-                return_type=instantiate_return_type(
-                    method.return_type,
-                    self.original.template.typenames,
-                    self.instantiations,
-                    self.cpp_typename(),
-                ),
-                args=parser.ArgumentList(instantiated_args),
-                is_const=method.is_const,
-                parent=self,
-            ))
+            class_instantiated_methods.append(
+                parser.Method(
+                    template=method.template,
+                    name=method.name,
+                    return_type=instantiate_return_type(
+                        method.return_type,
+                        typenames,
+                        self.instantiations,
+                        self.cpp_typename(),
+                    ),
+                    args=parser.ArgumentList(instantiated_args),
+                    is_const=method.is_const,
+                    parent=self,
+                ))
         return class_instantiated_methods
 
-    def instantiate_properties(self):
+    def instantiate_operators(self, typenames):
+        """
+        Instantiate the class-level template in the operator overload.
+
+        Args:
+            typenames: List of template types to instantiate.
+
+        Return: List of methods instantiated with provided template args on the class.
+        """
+        instantiated_operators = []
+        for operator in self.original.operators:
+            instantiated_args = instantiate_args_list(
+                operator.args.args_list,
+                typenames,
+                self.instantiations,
+                self.cpp_typename(),
+            )
+            instantiated_operators.append(
+                parser.Operator(
+                    name=operator.name,
+                    operator=operator.operator,
+                    return_type=instantiate_return_type(
+                        operator.return_type,
+                        typenames,
+                        self.instantiations,
+                        self.cpp_typename(),
+                    ),
+                    args=parser.ArgumentList(instantiated_args),
+                    is_const=operator.is_const,
+                    parent=self,
+                ))
+        return instantiated_operators
+
+    def instantiate_properties(self, typenames):
+        """
+        Instantiate the class properties.
+
+        Args:
+            typenames: List of template types to instantiate.
+
+        Return: List of properties instantiated with provided template args.
+        """
         instantiated_properties = instantiate_args_list(
             self.original.properties,
-            self.original.template.typenames,
+            typenames,
             self.instantiations,
             self.cpp_typename(),
         )
         return instantiated_properties
 
     def cpp_class(self):
+        """Generate the C++ code for wrapping."""
         return self.cpp_typename().to_cpp()
 
     def cpp_typename(self):
@@ -303,7 +519,10 @@ class InstantiatedClass(parser.Class):
 
 def instantiate_namespace_inplace(namespace):
     """
-    @param[in/out] namespace The namespace which content will be replaced with
+    Instantiate the classes and other elements in the `namespace` content and
+    assign it back to the namespace content attribute.
+
+    @param[in/out] namespace The namespace whose content will be replaced with
         the instantiated content.
     """
     instantiated_content = []
@@ -316,26 +535,50 @@ def instantiate_namespace_inplace(namespace):
                 instantiated_content.append(
                     InstantiatedClass(original_class, []))
             else:
-                if (len(original_class.template.typenames) > 1
-                        and original_class.template.instantiations[0]):
-                    raise ValueError(
-                        "Can't instantiate multi-parameter templates here. "
-                        "Please use typedef template instantiation."
-                    )
-                for inst in original_class.template.instantiations[0]:
+                # This case is for when the templates have enumerated instantiations.
+
+                # Use itertools to get all possible combinations of instantiations
+                # Works even if one template does not have an instantiation list
+                for instantiations in itertools.product(
+                        *original_class.template.instantiations):
                     instantiated_content.append(
-                        InstantiatedClass(original_class, [inst]))
+                        InstantiatedClass(original_class,
+                                          list(instantiations)))
+
+        elif isinstance(element, parser.GlobalFunction):
+            original_func = element
+            if not original_func.template:
+                instantiated_content.append(
+                    InstantiatedGlobalFunction(original_func, []))
+            else:
+                # Use itertools to get all possible combinations of instantiations
+                # Works even if one template does not have an instantiation list
+                for instantiations in itertools.product(
+                        *original_func.template.instantiations):
+                    instantiated_content.append(
+                        InstantiatedGlobalFunction(original_func,
+                                                   list(instantiations)))
+
         elif isinstance(element, parser.TypedefTemplateInstantiation):
+            # This is for the case where `typedef` statements are used
+            # to specify the template parameters.
             typedef_inst = element
-            original_class = namespace.top_level().find_class(
+            top_level = namespace.top_level()
+            original_element = top_level.find_class_or_function(
                 typedef_inst.typename)
-            typedef_content.append(
-                InstantiatedClass(
-                    original_class,
-                    typedef_inst.typename.instantiations,
-                    typedef_inst.new_name
-                )
-            )
+
+            # Check if element is a typedef'd class or function.
+            if isinstance(original_element, parser.Class):
+                typedef_content.append(
+                    InstantiatedClass(original_element,
+                                      typedef_inst.typename.instantiations,
+                                      typedef_inst.new_name))
+            elif isinstance(original_element, parser.GlobalFunction):
+                typedef_content.append(
+                    InstantiatedGlobalFunction(
+                        original_element, typedef_inst.typename.instantiations,
+                        typedef_inst.new_name))
+
         elif isinstance(element, parser.Namespace):
             instantiate_namespace_inplace(element)
             instantiated_content.append(element)
